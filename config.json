@@ -1,0 +1,24 @@
+{
+  "apiServer": {
+    "port": 8080,
+    "allowedOrigins": "*",
+    "readTimeout": 15,
+    "writeTimeout": 15,
+    "shutdownTimeout": 15
+  },
+  "discovery": {
+    "concurrency": 10,
+    "timeout": 300,
+    "retryCount": 3,
+    "retryDelay": 5
+  },
+  "outputDir": "/tmp/server-discovery",
+  "databaseConfig": {
+    "enabled": false,
+    "host": "localhost",
+    "port": 5432,
+    "database": "server_discovery",
+    "user": "postgres",
+    "password": "postgres"
+  }
+}

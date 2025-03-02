@@ -1,0 +1,9 @@
+image:
+  backend:
+    repository: server-discovery-backend
+    tag: latest
+    pullPolicy: Never
+  frontend:
+    repository: server-discovery-frontend
+    tag: latest
+    pullPolicy: Never

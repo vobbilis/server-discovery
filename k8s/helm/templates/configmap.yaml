@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "server-discovery.fullname" . }}-config
+  labels:
+    {{- include "server-discovery.labels" . | nindent 4 }}
+data:
+  config.json: |
+    {
+      "apiServer": {
+        "port": {{ .Values.config.apiServer.port }},
+        "allowedOrigins": "{{ .Values.config.apiServer.allowedOrigins }}",
+        "readTimeout": {{ .Values.config.apiServer.readTimeout }},
+        "writeTimeout": {{ .Values.config.apiServer.writeTimeout }},
+        "shutdownTimeout": {{ .Values.config.apiServer.shutdownTimeout }}
+      },
+      "discovery": {
+        "concurrency": {{ .Values.config.discovery.concurrency }},
+        "timeout": {{ .Values.config.discovery.timeout }},
+        "retryCount": {{ .Values.config.discovery.retryCount }},
+        "retryDelay": {{ .Values.config.discovery.retryDelay }}
+      },
+      "outputDir": "/tmp/server-discovery",
+      "databaseConfig": {
+        "enabled": {{ .Values.config.databaseConfig.enabled }},
+        "host": "{{ .Values.config.databaseConfig.host }}",
+        "port": {{ .Values.config.databaseConfig.port }},
+        "database": "{{ .Values.config.databaseConfig.database }}",
+        "user": "{{ .Values.config.databaseConfig.user }}",
+        "password": "{{ .Values.config.databaseConfig.password }}"
+      }
+    } 
