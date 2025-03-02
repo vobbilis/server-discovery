@@ -39,7 +39,8 @@ A comprehensive tool for discovering and monitoring servers in your network infr
    go mod download
    
    # Run the backend server
-   go run main.go
+   # Adding this line
+   go run server_discovery_controller.go
    ```
 
 3. Start the frontend (in a new terminal):
