@@ -1,24 +1,36 @@
 {
-  "apiServer": {
-    "port": 8080,
-    "allowedOrigins": "*",
-    "readTimeout": 15,
-    "writeTimeout": 15,
-    "shutdownTimeout": 15
+  "database": {
+    "host": "localhost",
+    "port": 5433,
+    "user": "postgres",
+    "password": "postgres",
+    "dbname": "server_discovery",
+    "sslmode": "disable",
+    "enabled": true
   },
   "discovery": {
     "concurrency": 10,
-    "timeout": 300,
+    "timeout": 300000000000,
     "retryCount": 3,
-    "retryDelay": 5
+    "retryDelay": 5000000000
   },
-  "outputDir": "/tmp/server-discovery",
-  "databaseConfig": {
-    "enabled": false,
-    "host": "localhost",
-    "port": 5432,
-    "database": "server_discovery",
-    "user": "postgres",
-    "password": "postgres"
-  }
+  "api": {
+    "port": 8090,
+    "allowed_origins": "*",
+    "read_timeout": 15000000000,
+    "write_timeout": 15000000000,
+    "shutdown_timeout": 15000000000
+  },
+  "powerShellScript": "scripts/discover_windows.ps1",
+  "output_dir": "discovery_results",
+  "skip_cert_verify": true,
+  "metricsPort": 9090,
+  "connectionPoolSize": 10,
+  "idleTimeout": 600000000000,
+  "server": {
+    "host": "localhost"
+  },
+  "concurrency": 10,
+  "batch_size": 50,
+  "metrics_port": 9090
 }

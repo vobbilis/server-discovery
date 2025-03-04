@@ -45,193 +45,161 @@ KERNEL_VERSION=$(uname -r)
 echo "  \"hostname\": \"$HOSTNAME\"," >> "$JSON_OUTPUT"
 echo "  \"os_name\": \"$OS_NAME\"," >> "$JSON_OUTPUT"
 echo "  \"os_version\": \"$OS_VERSION\"," >> "$JSON_OUTPUT"
+echo "  \"os_type\": \"linux\"," >> "$JSON_OUTPUT"
 echo "  \"kernel_version\": \"$KERNEL_VERSION\"," >> "$JSON_OUTPUT"
 
-# Get CPU information
-log "Collecting CPU information..."
-CPU_MODEL=$(grep "model name" /proc/cpuinfo | head -1 | cut -d: -f2 | sed 's/^[ \t]*//')
-CPU_COUNT=$(grep -c "processor" /proc/cpuinfo)
-
-echo "  \"cpu_model\": \"$CPU_MODEL\"," >> "$JSON_OUTPUT"
-echo "  \"cpu_count\": $CPU_COUNT," >> "$JSON_OUTPUT"
-
-# Get memory information
-log "Collecting memory information..."
-MEM_TOTAL_KB=$(grep "MemTotal" /proc/meminfo | awk '{print $2}')
-MEM_TOTAL_GB=$(echo "scale=2; $MEM_TOTAL_KB / 1024 / 1024" | bc)
-
-echo "  \"memory_total_gb\": $MEM_TOTAL_GB," >> "$JSON_OUTPUT"
-
-# Get disk information
-log "Collecting disk information..."
-DISK_INFO=$(df -h / | tail -1)
-DISK_TOTAL=$(echo "$DISK_INFO" | awk '{print $2}' | tr -d 'G')
-DISK_FREE=$(echo "$DISK_INFO" | awk '{print $4}' | tr -d 'G')
-
-echo "  \"disk_total_gb\": $DISK_TOTAL," >> "$JSON_OUTPUT"
-echo "  \"disk_free_gb\": $DISK_FREE," >> "$JSON_OUTPUT"
-
-# Get last boot time
-log "Collecting boot time information..."
-LAST_BOOT=$(uptime -s)
-
-echo "  \"last_boot_time\": \"$LAST_BOOT\"," >> "$JSON_OUTPUT"
-
-# Get IP addresses
-log "Collecting network interface information..."
-echo "  \"ip_addresses\": [" >> "$JSON_OUTPUT"
-
-IP_ADDRESSES=$(ip -j addr | jq -c '.[] | select(.operstate=="UP") | {interface: .ifname, addresses: [.addr_info[] | select(.family=="inet" or .family=="inet6") | {ip_address: .local, family: .family}]}')
-FORMATTED_IP=$(echo "$IP_ADDRESSES" | jq -c '.' | sed 's/$/,/' | sed '$ s/,$//')
-
-echo "$FORMATTED_IP" >> "$JSON_OUTPUT"
-echo "  ]," >> "$JSON_OUTPUT"
-
-# Get installed software
-log "Collecting installed software information..."
-echo "  \"installed_software\": [" >> "$JSON_OUTPUT"
-
+# Get package manager information
+log "Detecting package manager..."
 if command -v dpkg > /dev/null; then
-    # Debian/Ubuntu
-    SOFTWARE=$(dpkg-query -W -f='{"name": "${Package}", "version": "${Version}", "install_date": ""},\n')
+    PACKAGE_MANAGER="dpkg"
 elif command -v rpm > /dev/null; then
-    # RHEL/CentOS/Fedora
-    SOFTWARE=$(rpm -qa --queryformat '{"name": "%{NAME}", "version": "%{VERSION}", "install_date": "%{INSTALLTIME:date}"},\n')
+    PACKAGE_MANAGER="rpm"
+elif command -v pacman > /dev/null; then
+    PACKAGE_MANAGER="pacman"
 else
-    SOFTWARE=""
-    handle_error "Unable to determine package manager"
+    PACKAGE_MANAGER="unknown"
 fi
+echo "  \"package_manager\": \"$PACKAGE_MANAGER\"," >> "$JSON_OUTPUT"
 
-# Remove trailing comma from last entry
-SOFTWARE=$(echo "$SOFTWARE" | sed '$ s/,$//')
-echo "$SOFTWARE" >> "$JSON_OUTPUT"
-echo "  ]," >> "$JSON_OUTPUT"
-
-# Get running services
-log "Collecting running services information..."
-echo "  \"running_services\": [" >> "$JSON_OUTPUT"
-
-if command -v systemctl > /dev/null; then
-    # systemd
-    SERVICES=$(systemctl list-units --type=service --state=running --no-legend | awk '{print $1}' | while read service; do
-        status=$(systemctl show -p ActiveState --value "$service")
-        start_mode=$(systemctl show -p UnitFileState --value "$service")
-        echo "{\"name\": \"$service\", \"display_name\": \"$service\", \"status\": \"$status\", \"start_mode\": \"$start_mode\"},"
-    done)
+# Get init system
+log "Detecting init system..."
+if pidof systemd > /dev/null; then
+    INIT_SYSTEM="systemd"
 elif [ -f /etc/init.d/functions ]; then
-    # SysV init (RHEL/CentOS)
-    SERVICES=$(service --status-all 2>&1 | grep -E "running|stopped" | awk '{print $1, $2}' | while read service status; do
-        echo "{\"name\": \"$service\", \"display_name\": \"$service\", \"status\": \"$status\", \"start_mode\": \"unknown\"},"
-    done)
+    INIT_SYSTEM="sysvinit"
+elif [ -f /etc/init/init.conf ]; then
+    INIT_SYSTEM="upstart"
 else
-    SERVICES=""
-    handle_error "Unable to determine service manager"
+    INIT_SYSTEM="unknown"
 fi
+echo "  \"init_system\": \"$INIT_SYSTEM\"," >> "$JSON_OUTPUT"
 
-# Remove trailing comma from last entry
-SERVICES=$(echo "$SERVICES" | sed '$ s/,$//')
-echo "$SERVICES" >> "$JSON_OUTPUT"
+# Get SELinux status
+log "Checking SELinux status..."
+if command -v getenforce > /dev/null; then
+    SELINUX_STATUS=$(getenforce)
+else
+    SELINUX_STATUS="disabled"
+fi
+echo "  \"selinux_status\": \"$SELINUX_STATUS\"," >> "$JSON_OUTPUT"
+
+# Get firewall status
+log "Checking firewall status..."
+if command -v firewall-cmd > /dev/null; then
+    FIREWALL_STATUS=$(firewall-cmd --state)
+elif command -v ufw > /dev/null; then
+    FIREWALL_STATUS=$(ufw status | grep "Status" | cut -d: -f2 | tr -d ' ')
+else
+    FIREWALL_STATUS="unknown"
+fi
+echo "  \"firewall_status\": \"$FIREWALL_STATUS\"," >> "$JSON_OUTPUT"
+
+# Get active users
+log "Collecting active user information..."
+echo "  \"active_users\": [" >> "$JSON_OUTPUT"
+who -u | while read USER TTY LOGIN_TIME PID IDLE FROM; do
+    echo "    {" >> "$JSON_OUTPUT"
+    echo "      \"username\": \"$USER\"," >> "$JSON_OUTPUT"
+    echo "      \"terminal\": \"$TTY\"," >> "$JSON_OUTPUT"
+    echo "      \"login_time\": \"$LOGIN_TIME\"," >> "$JSON_OUTPUT"
+    if [ ! -z "$FROM" ]; then
+        echo "      \"from_host\": \"$FROM\"" >> "$JSON_OUTPUT"
+    fi
+    echo "    }," >> "$JSON_OUTPUT"
+done
+# Remove trailing comma and close array
+sed -i '$ s/,$//' "$JSON_OUTPUT"
 echo "  ]," >> "$JSON_OUTPUT"
 
-# Define common ports and their descriptions
-declare -A COMMON_PORTS
-COMMON_PORTS[20]="FTP (Data)"
-COMMON_PORTS[21]="FTP (Control)"
-COMMON_PORTS[22]="SSH"
-COMMON_PORTS[23]="Telnet"
-COMMON_PORTS[25]="SMTP"
-COMMON_PORTS[53]="DNS"
-COMMON_PORTS[80]="HTTP"
-COMMON_PORTS[88]="Kerberos"
-COMMON_PORTS[110]="POP3"
-COMMON_PORTS[123]="NTP"
-COMMON_PORTS[135]="MSRPC"
-COMMON_PORTS[137]="NetBIOS Name Service"
-COMMON_PORTS[138]="NetBIOS Datagram Service"
-COMMON_PORTS[139]="NetBIOS Session Service"
-COMMON_PORTS[143]="IMAP"
-COMMON_PORTS[389]="LDAP"
-COMMON_PORTS[443]="HTTPS"
-COMMON_PORTS[445]="SMB"
-COMMON_PORTS[464]="Kerberos Change/Set password"
-COMMON_PORTS[465]="SMTP over SSL"
-COMMON_PORTS[500]="ISAKMP/IKE"
-COMMON_PORTS[514]="Syslog"
-COMMON_PORTS[587]="SMTP (Submission)"
-COMMON_PORTS[636]="LDAPS"
-COMMON_PORTS[993]="IMAPS"
-COMMON_PORTS[995]="POP3S"
-COMMON_PORTS[1433]="Microsoft SQL Server"
-COMMON_PORTS[1434]="Microsoft SQL Monitor"
-COMMON_PORTS[1521]="Oracle Database"
-COMMON_PORTS[3306]="MySQL"
-COMMON_PORTS[3389]="RDP"
-COMMON_PORTS[5060]="SIP"
-COMMON_PORTS[5222]="XMPP"
-COMMON_PORTS[5432]="PostgreSQL"
-COMMON_PORTS[5985]="WinRM HTTP"
-COMMON_PORTS[5986]="WinRM HTTPS"
-COMMON_PORTS[8080]="HTTP Alternate"
-COMMON_PORTS[8443]="HTTPS Alternate"
-COMMON_PORTS[49152]="Windows RPC"
+# Get system load
+log "Collecting system load information..."
+LOAD1=$(cat /proc/loadavg | cut -d' ' -f1)
+LOAD5=$(cat /proc/loadavg | cut -d' ' -f2)
+LOAD15=$(cat /proc/loadavg | cut -d' ' -f3)
+echo "  \"system_load\": {" >> "$JSON_OUTPUT"
+echo "    \"load1\": $LOAD1," >> "$JSON_OUTPUT"
+echo "    \"load5\": $LOAD5," >> "$JSON_OUTPUT"
+echo "    \"load15\": $LOAD15" >> "$JSON_OUTPUT"
+echo "  }," >> "$JSON_OUTPUT"
 
-# Get open ports and network connections
-log "Collecting network connection information..."
-echo "  \"open_ports\": [" >> "$JSON_OUTPUT"
-
-# Use ss command (modern replacement for netstat)
-if command -v ss > /dev/null; then
-    # Get listening ports
-    LISTENING_PORTS=$(ss -tuln | grep LISTEN | awk '{print $5}' | while read addr; do
-        local_ip=$(echo "$addr" | cut -d: -f1)
-        local_port=$(echo "$addr" | cut -d: -f2)
-        
-        # Get process info
-        pid=$(ss -tulnp | grep "$addr" | grep -oP "pid=\K[0-9]+")
-        if [ -n "$pid" ]; then
-            process_name=$(ps -p "$pid" -o comm= 2>/dev/null || echo "unknown")
-        else
-            process_name="unknown"
-            pid=0
-        fi
-        
-        # Get description
-        description="${COMMON_PORTS[$local_port]:-Unknown}"
-        
-        echo "{\"localPort\": $local_port, \"localIP\": \"$local_ip\", \"state\": \"LISTENING\", \"description\": \"$description\", \"processID\": $pid, \"processName\": \"$process_name\"},"
-    done)
+# Get detailed network interface information
+log "Collecting network interface information..."
+echo "  \"network_interfaces\": [" >> "$JSON_OUTPUT"
+ip -j link show | jq -c '.[]' | while read IFACE; do
+    NAME=$(echo "$IFACE" | jq -r '.ifname')
+    MAC=$(echo "$IFACE" | jq -r '.address')
+    MTU=$(echo "$IFACE" | jq -r '.mtu')
+    STATE=$(echo "$IFACE" | jq -r '.operstate')
     
-    # Get established connections
-    ESTABLISHED_CONNS=$(ss -tun | grep ESTAB | awk '{print $5, $6}' | while read local remote; do
-        local_ip=$(echo "$local" | cut -d: -f1)
-        local_port=$(echo "$local" | cut -d: -f2)
-        remote_ip=$(echo "$remote" | cut -d: -f1)
-        remote_port=$(echo "$remote" | cut -d: -f2)
-        
-        # Get process info
-        pid=$(ss -tunp | grep "$local" | grep -oP "pid=\K[0-9]+")
-        if [ -n "$pid" ]; then
-            process_name=$(ps -p "$pid" -o comm= 2>/dev/null || echo "unknown")
-        else
-            process_name="unknown"
-            pid=0
-        fi
-        
-        # Get description
-        description="${COMMON_PORTS[$local_port]:-Unknown}"
-        
-        echo "{\"localPort\": $local_port, \"localIP\": \"$local_ip\", \"remotePort\": $remote_port, \"remoteIP\": \"$remote_ip\", \"state\": \"ESTABLISHED\", \"description\": \"$description\", \"processID\": $pid, \"processName\": \"$process_name\"},"
-    done)
+    # Get IP addresses for this interface
+    IP_ADDRS=$(ip -j addr show dev "$NAME" | jq -r '.[].addr_info[].local' 2>/dev/null)
     
-    # Combine and remove trailing comma from last entry
-    PORTS="$LISTENING_PORTS$ESTABLISHED_CONNS"
-    PORTS=$(echo "$PORTS" | sed '$ s/,$//')
-    echo "$PORTS" >> "$JSON_OUTPUT"
-else
-    handle_error "ss command not found"
-fi
+    # Get interface speed and duplex if available
+    if [ -f "/sys/class/net/$NAME/speed" ]; then
+        SPEED=$(cat "/sys/class/net/$NAME/speed")
+    else
+        SPEED="null"
+    fi
+    if [ -f "/sys/class/net/$NAME/duplex" ]; then
+        DUPLEX=$(cat "/sys/class/net/$NAME/duplex")
+    else
+        DUPLEX="null"
+    fi
+    
+    echo "    {" >> "$JSON_OUTPUT"
+    echo "      \"name\": \"$NAME\"," >> "$JSON_OUTPUT"
+    echo "      \"mac_address\": \"$MAC\"," >> "$JSON_OUTPUT"
+    echo "      \"mtu\": $MTU," >> "$JSON_OUTPUT"
+    echo "      \"state\": \"$STATE\"," >> "$JSON_OUTPUT"
+    echo "      \"speed\": $SPEED," >> "$JSON_OUTPUT"
+    [ "$DUPLEX" != "null" ] && echo "      \"duplex\": \"$DUPLEX\"," >> "$JSON_OUTPUT"
+    echo "      \"ip_addresses\": [" >> "$JSON_OUTPUT"
+    echo "$IP_ADDRS" | while read IP; do
+        [ ! -z "$IP" ] && echo "        \"$IP\"," >> "$JSON_OUTPUT"
+    done
+    # Remove trailing comma and close array
+    sed -i '$ s/,$//' "$JSON_OUTPUT"
+    echo "      ]" >> "$JSON_OUTPUT"
+    echo "    }," >> "$JSON_OUTPUT"
+done
+# Remove trailing comma and close array
+sed -i '$ s/,$//' "$JSON_OUTPUT"
+echo "  ]," >> "$JSON_OUTPUT"
 
+# Get mounted filesystems
+log "Collecting filesystem information..."
+echo "  \"mounted_filesystems\": [" >> "$JSON_OUTPUT"
+df -PT | tail -n +2 | while read DEVICE FSTYPE TOTAL USED FREE PCENT MOUNTPOINT; do
+    # Convert sizes to GB
+    TOTAL_GB=$(echo "scale=2; $TOTAL / 1024 / 1024" | bc)
+    USED_GB=$(echo "scale=2; $USED / 1024 / 1024" | bc)
+    FREE_GB=$(echo "scale=2; $FREE / 1024 / 1024" | bc)
+    
+    # Get mount options
+    OPTIONS=$(mount | grep "^$DEVICE" | awk '{print $4}')
+    
+    # Get inode information
+    INODES=$(df -i "$MOUNTPOINT" | tail -1)
+    USED_INODES=$(echo "$INODES" | awk '{print $3}')
+    FREE_INODES=$(echo "$INODES" | awk '{print $4}')
+    
+    echo "    {" >> "$JSON_OUTPUT"
+    echo "      \"device\": \"$DEVICE\"," >> "$JSON_OUTPUT"
+    echo "      \"mount_point\": \"$MOUNTPOINT\"," >> "$JSON_OUTPUT"
+    echo "      \"fs_type\": \"$FSTYPE\"," >> "$JSON_OUTPUT"
+    echo "      \"options\": \"$OPTIONS\"," >> "$JSON_OUTPUT"
+    echo "      \"total_gb\": $TOTAL_GB," >> "$JSON_OUTPUT"
+    echo "      \"used_gb\": $USED_GB," >> "$JSON_OUTPUT"
+    echo "      \"free_gb\": $FREE_GB," >> "$JSON_OUTPUT"
+    echo "      \"used_inodes\": $USED_INODES," >> "$JSON_OUTPUT"
+    echo "      \"free_inodes\": $FREE_INODES" >> "$JSON_OUTPUT"
+    echo "    }," >> "$JSON_OUTPUT"
+done
+# Remove trailing comma and close array
+sed -i '$ s/,$//' "$JSON_OUTPUT"
 echo "  ]" >> "$JSON_OUTPUT"
+
+# Close the main JSON object
 echo "}" >> "$JSON_OUTPUT"
 
 # Validate JSON output
@@ -262,32 +230,21 @@ SUMMARY_FILE="${OUTPUT_PATH}/summary.txt"
     echo "Hostname: $HOSTNAME"
     echo "OS: $OS_NAME $OS_VERSION"
     echo "Kernel: $KERNEL_VERSION"
-    echo "CPU: $CPU_MODEL ($CPU_COUNT cores)"
-    echo "Memory: ${MEM_TOTAL_GB}GB"
-    echo "Disk: ${DISK_TOTAL}GB total, ${DISK_FREE}GB free"
-    echo "Last Boot: $LAST_BOOT"
+    echo "Package Manager: $PACKAGE_MANAGER"
+    echo "Init System: $INIT_SYSTEM"
+    echo "SELinux Status: $SELINUX_STATUS"
+    echo "Firewall Status: $FIREWALL_STATUS"
+    echo "Active Users:"
+    who -u
     echo "==============================="
-    echo "IP Addresses:"
-    ip -br addr | grep -v DOWN
+    echo "System Load:"
+    cat /proc/loadavg
     echo "==============================="
-    echo "Listening Ports:"
-    ss -tuln | grep LISTEN
+    echo "Network Interfaces:"
+    ip -br addr
     echo "==============================="
-    echo "Established Connections:"
-    ss -tun | grep ESTAB
-    echo "==============================="
-    echo "Running Services (top 10):"
-    if command -v systemctl > /dev/null; then
-        systemctl list-units --type=service --state=running --no-legend | head -10
-    else
-        service --status-all 2>&1 | grep running | head -10
-    fi
-    echo "==============================="
-    echo "Top Processes by CPU:"
-    ps aux --sort=-%cpu | head -11
-    echo "==============================="
-    echo "Top Processes by Memory:"
-    ps aux --sort=-%mem | head -11
+    echo "Mounted Filesystems:"
+    df -PT
     echo "==============================="
 } > "$SUMMARY_FILE"
 

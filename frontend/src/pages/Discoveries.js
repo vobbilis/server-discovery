@@ -1,44 +1,76 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Box, 
-  Typography, 
-  Paper, 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableContainer, 
-  TableHead, 
+import axios from 'axios';
+import { API_BASE_URL } from '../config';
+import {
+  Box,
+  Typography,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
   TableRow,
   CircularProgress,
-  Chip
+  Container,
+  Chip,
+  Alert
 } from '@mui/material';
-import { Link } from 'react-router-dom';
+import { format, isValid } from 'date-fns';
+import ServerDetailsPanel from '../components/ServerDetailsPanel';
 
 function Discoveries() {
   const [discoveries, setDiscoveries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedServer, setSelectedServer] = useState(null);
+  const [serverLoading, setServerLoading] = useState(false);
+  const [serverError, setServerError] = useState(null);
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return isValid(date) ? format(date, 'PPpp') : '-';
+  };
 
   useEffect(() => {
-    // In a real app, we would fetch all discoveries
-    // For now, we'll just use the mock data from the stats endpoint
-    fetch('/api/stats')
-      .then(response => response.json())
-      .then(data => {
-        // Use the recentDiscoveries as our data source for now
-        setDiscoveries(data.recentDiscoveries || []);
-        setLoading(false);
-      })
-      .catch(error => {
-        console.error('Error fetching discoveries:', error);
-        setError('Failed to load discoveries');
-        setLoading(false);
-      });
+    fetchDiscoveries();
   }, []);
+
+  const fetchDiscoveries = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/discoveries`);
+      setDiscoveries(response.data);
+    } catch (err) {
+      setError(err.message);
+      console.error('Error fetching discoveries:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleServerClick = async (serverId) => {
+    setServerLoading(true);
+    setServerError(null);
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/servers/${serverId}`);
+      setSelectedServer(response.data);
+    } catch (err) {
+      setServerError(err.message);
+      console.error('Error fetching server details:', err);
+    } finally {
+      setServerLoading(false);
+    }
+  };
+
+  const handleClosePanel = () => {
+    setSelectedServer(null);
+    setServerError(null);
+  };
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
         <CircularProgress />
       </Box>
     );
@@ -46,57 +78,80 @@ function Discoveries() {
 
   if (error) {
     return (
-      <Box sx={{ mt: 4 }}>
-        <Typography color="error" variant="h6">
-          Error: {error}
-        </Typography>
+      <Box p={3}>
+        <Alert severity="error">Error loading discoveries: {error}</Alert>
       </Box>
     );
   }
 
   return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Discovery History
-      </Typography>
-      
-      <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
-        <TableContainer>
+    <Container maxWidth="xl">
+      <Box sx={{ mt: 4, mb: 4 }}>
+        <Typography variant="h4" gutterBottom>
+          Discovery History
+        </Typography>
+        
+        <TableContainer component={Paper}>
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>ID</TableCell>
-                <TableCell>Server</TableCell>
+                <TableCell>Discovery #</TableCell>
+                <TableCell>Target Server</TableCell>
                 <TableCell>Status</TableCell>
-                <TableCell>Time</TableCell>
-                <TableCell>Details</TableCell>
+                <TableCell>Started At</TableCell>
+                <TableCell>Completed At</TableCell>
+                <TableCell>Error</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {discoveries.map((discovery) => (
                 <TableRow key={discovery.id}>
                   <TableCell>{discovery.id}</TableCell>
-                  <TableCell>{discovery.serverHostname}</TableCell>
                   <TableCell>
-                    <Chip 
-                      label={discovery.success ? 'Success' : 'Failed'} 
-                      color={discovery.success ? 'success' : 'error'} 
-                      size="small" 
+                    <Chip
+                      label={`${discovery.server_id}${discovery.hostname ? ` (${discovery.hostname})` : ''}`}
+                      onClick={() => handleServerClick(discovery.server_id)}
+                      color="primary"
+                      variant="outlined"
+                      sx={{ cursor: 'pointer' }}
                     />
                   </TableCell>
-                  <TableCell>{new Date(discovery.endTime).toLocaleString()}</TableCell>
                   <TableCell>
-                    <Link to={`/discoveries/${discovery.id}`}>
-                      View Details
-                    </Link>
+                    <Chip
+                      label={discovery.status}
+                      color={
+                        discovery.status === 'completed' ? 'success' :
+                        discovery.status === 'failed' ? 'error' :
+                        'default'
+                      }
+                    />
                   </TableCell>
+                  <TableCell>{formatDate(discovery.started_at)}</TableCell>
+                  <TableCell>{formatDate(discovery.completed_at)}</TableCell>
+                  <TableCell>{discovery.error || '-'}</TableCell>
                 </TableRow>
               ))}
+              {discoveries.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} align="center">
+                    No discoveries found
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </TableContainer>
-      </Paper>
-    </Box>
+      </Box>
+
+      {selectedServer && (
+        <ServerDetailsPanel
+          server={selectedServer}
+          loading={serverLoading}
+          error={serverError}
+          onClose={handleClosePanel}
+        />
+      )}
+    </Container>
   );
 }
 

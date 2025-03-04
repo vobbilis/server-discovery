@@ -7,22 +7,72 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/vobbilis/codegen/server-discovery/pkg/models"
 )
 
-// SSHConfig represents the configuration for an SSH connection
-type SSHConfig struct {
-	Host     string
-	Port     int
-	Username string
-	Password string
-	KeyFile  string
+// SSHConnectionPool manages SSH client connections
+type SSHConnectionPool struct {
+	clients     map[string]*ssh.Client
+	mutex       sync.Mutex
+	maxSize     int
+	idleTimeout time.Duration
+	lastUsed    map[string]time.Time
 }
 
-// RunLinuxDiscovery executes the discovery script on a Linux server via SSH
-func RunLinuxDiscovery(config SSHConfig, outputDir string) (string, error) {
+// NewSSHConnectionPool creates a new SSH connection pool
+func NewSSHConnectionPool(maxSize int, idleTimeout time.Duration) *SSHConnectionPool {
+	return &SSHConnectionPool{
+		clients:     make(map[string]*ssh.Client),
+		lastUsed:    make(map[string]time.Time),
+		maxSize:     maxSize,
+		idleTimeout: idleTimeout,
+	}
+}
+
+// GetClient gets or creates an SSH client for the given config
+func (p *SSHConnectionPool) GetClient(config models.SSHConfig) (*ssh.Client, error) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	key := fmt.Sprintf("%s:%d", config.Host, config.Port)
+
+	// Check if we have an existing client
+	if client, exists := p.clients[key]; exists {
+		if time.Since(p.lastUsed[key]) > p.idleTimeout {
+			// Client has been idle too long, close and remove it
+			client.Close()
+			delete(p.clients, key)
+			delete(p.lastUsed, key)
+		} else {
+			// Update last used time and return existing client
+			p.lastUsed[key] = time.Now()
+			return client, nil
+		}
+	}
+
+	// Create new client if we have room
+	if len(p.clients) >= p.maxSize {
+		// Remove oldest client
+		var oldestKey string
+		var oldestTime time.Time
+		for k, t := range p.lastUsed {
+			if oldestKey == "" || t.Before(oldestTime) {
+				oldestKey = k
+				oldestTime = t
+			}
+		}
+		if oldestKey != "" {
+			p.clients[oldestKey].Close()
+			delete(p.clients, oldestKey)
+			delete(p.lastUsed, oldestKey)
+		}
+	}
+
 	// Create SSH client configuration
 	clientConfig := &ssh.ClientConfig{
 		User:            config.Username,
@@ -37,15 +87,15 @@ func RunLinuxDiscovery(config SSHConfig, outputDir string) (string, error) {
 	}
 
 	// Add key-based authentication if provided
-	if config.KeyFile != "" {
-		key, err := ioutil.ReadFile(config.KeyFile)
+	if config.PrivateKeyPath != "" {
+		key, err := ioutil.ReadFile(config.PrivateKeyPath)
 		if err != nil {
-			return "", fmt.Errorf("unable to read private key: %v", err)
+			return nil, fmt.Errorf("unable to read private key: %v", err)
 		}
 
 		signer, err := ssh.ParsePrivateKey(key)
 		if err != nil {
-			return "", fmt.Errorf("unable to parse private key: %v", err)
+			return nil, fmt.Errorf("unable to parse private key: %v", err)
 		}
 
 		clientConfig.Auth = append(clientConfig.Auth, ssh.PublicKeys(signer))
@@ -55,9 +105,42 @@ func RunLinuxDiscovery(config SSHConfig, outputDir string) (string, error) {
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
 	client, err := ssh.Dial("tcp", addr, clientConfig)
 	if err != nil {
-		return "", fmt.Errorf("failed to connect to SSH server: %v", err)
+		return nil, fmt.Errorf("failed to connect to SSH server: %v", err)
 	}
-	defer client.Close()
+
+	// Store the new client
+	p.clients[key] = client
+	p.lastUsed[key] = time.Now()
+
+	return client, nil
+}
+
+// CloseAll closes all connections in the pool
+func (p *SSHConnectionPool) CloseAll() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	for key, client := range p.clients {
+		client.Close()
+		delete(p.clients, key)
+		delete(p.lastUsed, key)
+	}
+}
+
+// Initialize SSH connection pool
+var sshPool *SSHConnectionPool
+
+func init() {
+	sshPool = NewSSHConnectionPool(10, 10*time.Minute)
+}
+
+// RunLinuxDiscovery executes the discovery script on a Linux server via SSH
+func RunLinuxDiscovery(config models.SSHConfig, outputDir string) (string, error) {
+	// Get client from pool
+	client, err := sshPool.GetClient(config)
+	if err != nil {
+		return "", fmt.Errorf("failed to get SSH client: %v", err)
+	}
 
 	// Create a session
 	session, err := client.NewSession()
@@ -187,4 +270,59 @@ func downloadFile(client *ssh.Client, remotePath string) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+// SSHClient represents an SSH client connection
+type SSHClient struct {
+	config     *models.SSHConfig
+	client     *ssh.Client
+	lastActive time.Time
+}
+
+// NewSSHClient creates a new SSH client with the given configuration
+func NewSSHClient(config *models.SSHConfig) (*SSHClient, error) {
+	sshConfig := &ssh.ClientConfig{
+		User: config.Username,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(config.Password),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         time.Duration(config.TimeoutSeconds) * time.Second,
+	}
+
+	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", config.Host, config.Port), sshConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial: %v", err)
+	}
+
+	return &SSHClient{
+		config:     config,
+		client:     client,
+		lastActive: time.Now(),
+	}, nil
+}
+
+// Execute runs a command on the remote server
+func (c *SSHClient) Execute(command string) (string, error) {
+	session, err := c.client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("failed to create session: %v", err)
+	}
+	defer session.Close()
+
+	var stdoutBuf bytes.Buffer
+	session.Stdout = &stdoutBuf
+	session.Stderr = &stdoutBuf
+
+	err = session.Run(command)
+	if err != nil {
+		return "", fmt.Errorf("failed to run command: %v", err)
+	}
+
+	return stdoutBuf.String(), nil
+}
+
+// Close closes the SSH connection
+func (c *SSHClient) Close() error {
+	return c.client.Close()
 }
