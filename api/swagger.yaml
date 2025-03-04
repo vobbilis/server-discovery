@@ -1,0 +1,148 @@
+openapi: 3.0.0
+info:
+  title: Server Discovery API
+  version: 1.0.0
+  description: API for discovering and monitoring server configurations
+
+servers:
+  - url: http://localhost:8090
+    description: Local development server
+
+paths:
+  /api/stats:
+    get:
+      summary: Get system statistics
+      responses:
+        '200':
+          description: System statistics
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/servers:
+    get:
+      summary: List all servers
+      responses:
+        '200':
+          description: List of servers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Server'
+
+  /api/servers/{id}:
+    get:
+      summary: Get server details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Server details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerDetails'
+
+  /api/servers/{id}/open-ports:
+    get:
+      summary: Get server open ports
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of open ports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Port'
+
+components:
+  schemas:
+    Server:
+      type: object
+      properties:
+        id:
+          type: integer
+        hostname:
+          type: string
+        os_type:
+          type: string
+        status:
+          type: string
+
+    ServerDetails:
+      type: object
+      properties:
+        id:
+          type: integer
+        hostname:
+          type: string
+        os_type:
+          type: string
+        status:
+          type: string
+        cpu_info:
+          type: string
+        memory_total:
+          type: integer
+        disk_total:
+          type: integer
+        last_boot:
+          type: string
+          format: date-time
+        open_ports:
+          type: array
+          items:
+            $ref: '#/components/schemas/Port'
+        ip_addresses:
+          type: array
+          items:
+            type: string
+        installed_software:
+          type: array
+          items:
+            $ref: '#/components/schemas/Software'
+
+    Port:
+      type: object
+      properties:
+        local_port:
+          type: integer
+        local_ip:
+          type: string
+        remote_ip:
+          type: string
+        remote_port:
+          type: integer
+        state:
+          type: string
+        process_name:
+          type: string
+        process_id:
+          type: integer
+        description:
+          type: string
+
+    Software:
+      type: object
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        install_date:
+          type: string
+          format: date-time 

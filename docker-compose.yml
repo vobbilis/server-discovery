@@ -1,19 +1,50 @@
 version: '3.8'
 
 services:
-  db:
-    image: postgres:15
-    container_name: server_discovery_test_db
+  postgres:
+    image: postgres:14-alpine
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: server_discovery
-    ports:
-      - "5433:5432"
+      POSTGRES_USER: ${DB_USER:-server_discovery}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-server_discovery}
+      POSTGRES_DB: ${DB_NAME:-server_discovery}
     volumes:
-      - ./db/init:/docker-entrypoint-initdb.d
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-server_discovery}"]
       interval: 5s
       timeout: 5s
-      retries: 5 
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-server_discovery}
+      DB_PASSWORD: ${DB_PASSWORD:-server_discovery}
+      DB_NAME: ${DB_NAME:-server_discovery}
+      API_PORT: 8090
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    environment:
+      REACT_APP_API_URL: http://localhost:8090
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data: 
