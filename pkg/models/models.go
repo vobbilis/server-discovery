@@ -23,6 +23,7 @@ type ServerDetails struct {
 	OSType            string         `json:"os_type" db:"os_type"`
 	Status            string         `json:"status" db:"status"`
 	LastChecked       time.Time      `json:"last_checked" db:"last_checked"`
+	Region            string         `json:"region" db:"region"`
 	OSName            string         `json:"os_name" db:"os_name"`
 	OSVersion         string         `json:"os_version" db:"os_version"`
 	CPUModel          string         `json:"cpu_model" db:"cpu_model"`
@@ -36,7 +37,6 @@ type ServerDetails struct {
 	IPAddresses       []IPAddress    `json:"ip_addresses,omitempty"`
 	OpenPorts         []Port         `json:"open_ports,omitempty"`
 	Filesystems       []Filesystem   `json:"filesystems,omitempty"`
-	Region            string         `json:"region,omitempty"`
 	InstalledSoftware []Software     `json:"installed_software,omitempty" db:"installed_software"`
 	Tags              []Tag          `json:"tags,omitempty"`
 }

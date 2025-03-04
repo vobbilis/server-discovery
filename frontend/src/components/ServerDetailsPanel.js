@@ -15,6 +15,7 @@ import {
   Alert,
   Backdrop,
   Badge,
+  LinearProgress,
 } from '@mui/material';
 import {
   Computer as ComputerIcon,
@@ -27,6 +28,7 @@ import {
   Close as CloseIcon,
   RadioButtonChecked as EstablishedIcon,
   RadioButtonUnchecked as ListenIcon,
+  Speed as SpeedIcon,
 } from '@mui/icons-material';
 import { format, isValid } from 'date-fns';
 
@@ -99,7 +101,18 @@ function ServerDetailsPanel({ server, loading, error, onClose }) {
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="body2" color="text.secondary">IP</Typography>
-                  <Typography>{server.ip || 'Unknown'}</Typography>
+                  <Typography>
+                    {server.ip || (server.ip_addresses && server.ip_addresses.length > 0 ? server.ip_addresses[0].ip_address : 'Unknown')}
+                    {server.ip_addresses && server.ip_addresses.length > 1 && (
+                      <Chip
+                        label={`+${server.ip_addresses.length - 1} more`}
+                        size="small"
+                        color="info"
+                        variant="outlined"
+                        sx={{ ml: 1 }}
+                      />
+                    )}
+                  </Typography>
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="body2" color="text.secondary">OS Type</Typography>
@@ -148,27 +161,159 @@ function ServerDetailsPanel({ server, loading, error, onClose }) {
                 <MemoryIcon sx={{ mr: 1 }} /> Hardware Information
               </Typography>
               <Grid container spacing={2}>
-                <Grid item xs={6}>
-                  <Typography variant="body2" color="text.secondary">CPU</Typography>
-                  <Typography>{server.cpu || 'Unknown'}</Typography>
+                {/* CPU Section */}
+                <Grid item xs={12}>
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography variant="body2" color="text.secondary">CPU</Typography>
+                      {server.metrics?.cpu_usage && (
+                        <Chip
+                          label={`${server.metrics.cpu_usage.toFixed(1)}%`}
+                          size="small"
+                          color={server.metrics.cpu_usage > 80 ? 'error' : server.metrics.cpu_usage > 60 ? 'warning' : 'success'}
+                          variant="outlined"
+                        />
+                      )}
+                    </Box>
+                    <Typography variant="body1" sx={{ mb: 1 }}>{server.cpu_model || 'Unknown'}</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Chip
+                        label={`${server.cpu_count || 0} cores`}
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                      />
+                      {server.metrics?.cpu_usage && (
+                        <Box sx={{ flexGrow: 1 }}>
+                          <LinearProgress 
+                            variant="determinate" 
+                            value={server.metrics.cpu_usage} 
+                            color={server.metrics.cpu_usage > 80 ? 'error' : server.metrics.cpu_usage > 60 ? 'warning' : 'success'}
+                            sx={{ height: 6, borderRadius: 3 }}
+                          />
+                        </Box>
+                      )}
+                    </Box>
+                  </Paper>
                 </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="body2" color="text.secondary">Memory</Typography>
-                  <Typography>
-                    {server.memory ? `${server.memory} GB` : 'Unknown'}
-                    {server.memory_usage && ` (${server.memory_usage}% used)`}
-                  </Typography>
+
+                {/* Memory Section */}
+                <Grid item xs={12}>
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography variant="body2" color="text.secondary">Memory</Typography>
+                      {server.metrics?.memory_used && server.memory_total_gb && (
+                        <Chip
+                          label={`${((server.metrics.memory_used / (server.memory_total_gb * 1024 * 1024 * 1024)) * 100).toFixed(1)}%`}
+                          size="small"
+                          color={server.metrics.memory_used / (server.memory_total_gb * 1024 * 1024 * 1024) > 0.8 ? 'error' : server.metrics.memory_used / (server.memory_total_gb * 1024 * 1024 * 1024) > 0.6 ? 'warning' : 'success'}
+                          variant="outlined"
+                        />
+                      )}
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <Typography variant="body1">
+                        {server.memory_total_gb ? `${server.memory_total_gb.toFixed(1)} GB` : 'Unknown'}
+                      </Typography>
+                      {server.metrics?.memory_used && (
+                        <Typography color="text.secondary">
+                          ({((server.metrics.memory_used / (1024 * 1024 * 1024)).toFixed(1))} GB used)
+                        </Typography>
+                      )}
+                    </Box>
+                    {server.metrics?.memory_used && server.memory_total_gb && (
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={(server.metrics.memory_used / (server.memory_total_gb * 1024 * 1024 * 1024)) * 100} 
+                        color={server.metrics.memory_used / (server.memory_total_gb * 1024 * 1024 * 1024) > 0.8 ? 'error' : server.metrics.memory_used / (server.memory_total_gb * 1024 * 1024 * 1024) > 0.6 ? 'warning' : 'success'}
+                        sx={{ height: 6, borderRadius: 3 }}
+                      />
+                    )}
+                  </Paper>
                 </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="body2" color="text.secondary">Disk Space</Typography>
-                  <Typography>
-                    {server.disk_space ? `${server.disk_space} GB` : 'Unknown'}
-                    {server.disk_usage && ` (${server.disk_usage}% used)`}
-                  </Typography>
+
+                {/* Disk Section */}
+                <Grid item xs={12}>
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography variant="body2" color="text.secondary">Disk Space</Typography>
+                      {server.disk_free_gb && server.disk_total_gb && (
+                        <Chip
+                          label={`${((server.disk_total_gb - server.disk_free_gb) / server.disk_total_gb * 100).toFixed(1)}%`}
+                          size="small"
+                          color={(server.disk_total_gb - server.disk_free_gb) / server.disk_total_gb > 0.8 ? 'error' : (server.disk_total_gb - server.disk_free_gb) / server.disk_total_gb > 0.6 ? 'warning' : 'success'}
+                          variant="outlined"
+                        />
+                      )}
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <Typography variant="body1">
+                        {server.disk_total_gb ? `${server.disk_total_gb.toFixed(1)} GB` : 'Unknown'}
+                      </Typography>
+                      {server.disk_free_gb && (
+                        <Typography color="text.secondary">
+                          ({((server.disk_total_gb - server.disk_free_gb).toFixed(1))} GB used)
+                        </Typography>
+                      )}
+                    </Box>
+                    {server.disk_free_gb && server.disk_total_gb && (
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={((server.disk_total_gb - server.disk_free_gb) / server.disk_total_gb) * 100} 
+                        color={(server.disk_total_gb - server.disk_free_gb) / server.disk_total_gb > 0.8 ? 'error' : (server.disk_total_gb - server.disk_free_gb) / server.disk_total_gb > 0.6 ? 'warning' : 'success'}
+                        sx={{ height: 6, borderRadius: 3 }}
+                      />
+                    )}
+                  </Paper>
                 </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="body2" color="text.secondary">Last Boot</Typography>
-                  <Typography>{formatDate(server.last_boot_time)}</Typography>
+
+                {/* System Section */}
+                <Grid item xs={12}>
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>System</Typography>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} sm={6}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <HistoryIcon fontSize="small" color="action" />
+                          <Typography variant="body2">
+                            Last Boot: {formatDate(server.last_boot_time)}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        {server.metrics?.load_average && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <SpeedIcon fontSize="small" color="action" />
+                            <Typography variant="body2">
+                              Load: {server.metrics.load_average.toFixed(2)}
+                            </Typography>
+                            <Chip
+                              label={server.metrics.load_average > 4 ? 'High' : server.metrics.load_average > 2 ? 'Medium' : 'Low'}
+                              size="small"
+                              color={server.metrics.load_average > 4 ? 'error' : server.metrics.load_average > 2 ? 'warning' : 'success'}
+                              variant="outlined"
+                            />
+                          </Box>
+                        )}
+                      </Grid>
+                      <Grid item xs={12}>
+                        {server.metrics?.process_count && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <AppsIcon fontSize="small" color="action" />
+                            <Typography variant="body2">
+                              {server.metrics.process_count} processes
+                            </Typography>
+                            <Chip
+                              label={server.metrics.process_count > 400 ? 'High' : server.metrics.process_count > 200 ? 'Medium' : 'Low'}
+                              size="small"
+                              color={server.metrics.process_count > 400 ? 'error' : server.metrics.process_count > 200 ? 'warning' : 'success'}
+                              variant="outlined"
+                            />
+                          </Box>
+                        )}
+                      </Grid>
+                    </Grid>
+                  </Paper>
                 </Grid>
               </Grid>
             </Box>
