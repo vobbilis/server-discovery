@@ -20,6 +20,41 @@ A comprehensive tool for discovering and monitoring servers in your network infr
 - kubectl (for Kubernetes management)
 - Helm (for Kubernetes deployment)
 
+## Database Setup (PostgreSQL in Docker)
+
+⚠️ **Important**: Ensure Docker Desktop or Docker daemon is running on your system before proceeding.
+
+To start the PostgreSQL database:
+
+1. Navigate to the project directory:
+   ```bash
+   cd server-discovery
+   ```
+
+2. Start the database using docker-compose:
+   ```bash
+   docker-compose -f docker-compose.test.yml up -d
+   ```
+
+3. Verify the database is running and accessible (important before starting the backend):
+   ```bash
+   # This command should return a row count if the database is running properly
+   docker exec server_discovery_test_db psql -U postgres -d server_discovery -c "SELECT COUNT(*) FROM server_discovery.servers;"
+   ```
+
+The database will automatically initialize with the test data and be available with these settings:
+- Database name: `server_discovery`
+- Username: `postgres`
+- Host: `localhost`
+- Port: `5433`
+
+To stop the database:
+```bash
+docker-compose -f docker-compose.test.yml down
+```
+
+⚠️ **Note**: The backend service requires a running database connection. Make sure the verification step succeeds before proceeding with the backend setup.
+
 ## Quick Start
 
 ### Local Development
@@ -32,16 +67,29 @@ A comprehensive tool for discovering and monitoring servers in your network infr
 
 2. Start the backend:
    ```bash
-   # Navigate to the backend directory
-   cd backend
+   # Navigate to the server directory
+   cd cmd/server
    
    # Install dependencies
    go mod download
    
    # Run the backend server
-   # Adding this line
-   go run server_discovery_controller.go
+   go run main.go
    ```
+
+   Verify the backend is running properly:
+   ```bash
+   # This command should return HTTP 200 and server statistics
+   curl -v http://localhost:8090/api/stats
+
+   # This command should return HTTP 200 and a list of servers
+   curl -v http://localhost:8090/api/servers
+   ```
+
+   If these commands fail, check:
+   - Database is running (see Database Setup section above)
+   - No other service is using port 8090
+   - Backend logs for any error messages
 
 3. Start the frontend (in a new terminal):
    ```bash
@@ -54,6 +102,30 @@ A comprehensive tool for discovering and monitoring servers in your network infr
    # Run the development server
    npm start
    ```
+
+   Verify the frontend is running properly:
+   ```bash
+   # Check if the development server is running (should return HTTP 200)
+   curl -v http://localhost:3000
+
+   # Open in your browser
+   open http://localhost:3000  # for macOS
+   # or
+   xdg-open http://localhost:3000  # for Linux
+   # or simply open http://localhost:3000 in your preferred browser
+   ```
+
+   If these checks fail, verify:
+   - Backend is running and accessible (see backend verification steps above)
+   - No other service is using port 3000
+   - Check the terminal running the frontend for any error messages
+   - Check browser console for any JavaScript errors
+
+   Expected behavior when working properly:
+   - You should see the login page or dashboard
+   - The server list should load without errors
+   - Navigation menu should be responsive
+   - No console errors in browser developer tools
 
 4. Access the application at http://localhost:3000
 
